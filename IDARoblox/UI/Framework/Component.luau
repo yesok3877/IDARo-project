@@ -37,6 +37,41 @@
 local Component = {}
 Component.__index = Component
 
+-- Elevated-task helpers
+-- ---------------------------------------------------------------------
+-- In executor contexts (Wave, Synapse, Krnl), the executor's own
+-- task.defer / task.delay run in threads with full Plugin capability
+-- (so Instance access, signal Connect, etc. work). Roblox's default
+-- task.defer can resume in a thread that has been downgraded to a
+-- lower identity, breaking subsequent renders.
+--
+-- We resolve the elevated versions from getgenv() / getrenv() the
+-- first time we need them and fall back to Roblox's task if we can't
+-- find an executor.
+local _elevatedDefer
+local _elevatedDelay
+local function _findElevatedTask()
+    local sources = {}
+    local getgenv = rawget(_G, "getgenv")
+    if type(getgenv) == "function" then
+        local ok, env = pcall(getgenv)
+        if ok and type(env) == "table" then sources[#sources + 1] = env end
+    end
+    sources[#sources + 1] = _G
+    for _, env in sources do
+        local t = rawget(env, "task")
+        if type(t) == "table"
+            and type(t.defer) == "function"
+            and type(t.delay) == "function" then
+            return t.defer, t.delay
+        end
+    end
+    return task.defer, task.delay
+end
+_elevatedDefer, _elevatedDelay = _findElevatedTask()
+Component._elevatedDefer = _elevatedDefer
+Component._elevatedDelay = _elevatedDelay
+
 -- Marker that Element.create checks to distinguish components from raw classes.
 Component.__isComponentClass = true
 
@@ -170,9 +205,9 @@ function Component:setState(updaterOrTable)
     if cur >= _SETSTATE_DEPTH_LIMIT then
         -- Break the cascade: schedule on the next Heartbeat so the
         -- defer chain unwinds and the re-entry counter resets.
-        task.delay(0, runUpdate)
+        _elevatedDelay(0, runUpdate)
     else
-        task.defer(runUpdate)
+        _elevatedDefer(runUpdate)
     end
 end
 

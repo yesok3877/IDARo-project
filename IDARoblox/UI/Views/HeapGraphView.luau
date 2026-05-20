@@ -455,6 +455,7 @@ function HeapGraphView:_renderToolbar()
         Size = UDim2.new(1, 0, 0, TOP_BAR_H),
         BackgroundColor3 = theme:color("surfaceAlt"),
         BorderSizePixel = 0,
+        ClipsDescendants = true,                                      -- keep chips from overflowing the bar
     }, children)
 end
 

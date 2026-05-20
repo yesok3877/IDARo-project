@@ -29,6 +29,7 @@
 
 local Element   = _G.IDARo.require("UI.Framework.Element")
 local Component = _G.IDARo.require("UI.Framework.Component")
+local Component = _G.IDARo.require("UI.Framework.Component")
 
 local Renderer = {}
 Renderer.__index = Renderer
@@ -480,7 +481,7 @@ function Renderer:_requestComponentUpdate(node)
     self._pendingUpdates[node] = true
     if not self._flushScheduled then
         self._flushScheduled = true
-        task.defer(function()
+        (Component._elevatedDefer or task.defer)(function()
             self._flushScheduled = false
             local pending = self._pendingUpdates
             self._pendingUpdates = {}

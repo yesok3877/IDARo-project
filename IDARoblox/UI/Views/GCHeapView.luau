@@ -549,9 +549,12 @@ function GCHeapView:render()
                 BackgroundTransparency = 1,
                 Text = (snap and string.format(
                     "%d objects · %d functions · %d tables · scan @ %.1fs ago",
-                    snap.totalCount or 0,
-                    snap.byType and snap.byType.func or 0,
-                    snap.byType and snap.byType.table or 0,
+                    (snap.summary and snap.summary.totalObjects)
+                        or (snap.objects and #snap.objects) or 0,
+                    (snap.summary and snap.summary.byType and snap.summary.byType["function"])
+                        or (snap.functions and #snap.functions) or 0,
+                    (snap.summary and snap.summary.byType and snap.summary.byType.table)
+                        or (snap.tables and #snap.tables) or 0,
                     os.clock() - self.state.lastScanAt))
                     or "no snapshot",
                 TextColor3 = theme:color("textMuted"),

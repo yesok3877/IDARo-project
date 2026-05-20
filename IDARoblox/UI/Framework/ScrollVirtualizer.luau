@@ -196,21 +196,34 @@ function ScrollVirtualizer:render()
 
     local items = props.items
     local first, last = self.state.startIndex, self.state.endIndex
-    -- Clamp against props.itemCount (and the items array length) in
-    -- case _render is called before _updateRange has clamped these
-    -- state values (e.g. on initial mount when itemCount = 0).
-    local upperBound = math.min(props.itemCount or 0, items and #items or 0)
+    -- Clamp against props.itemCount (and the items array length when
+    -- provided) in case _render is called before _updateRange has
+    -- clamped these state values (e.g. on initial mount when
+    -- itemCount = 0).
+    --
+    -- Two calling conventions supported:
+    --   (a) caller provides items array → we look up items[i] and pass
+    --       it to renderItem alongside the index;
+    --   (b) caller provides only itemCount + renderItem → we pass nil
+    --       as the item and the caller's renderItem(item, i) does its
+    --       own lookup by index. This is the common case for views
+    --       that build a transient filtered array each render.
+    local itemCountProp = props.itemCount or 0
+    local upperBound = items and math.min(itemCountProp, #items) or itemCountProp
     if last > upperBound then last = upperBound end
     local rows = {}
-    if items and upperBound > 0 and last >= first then
+    if upperBound > 0 and last >= first then
         for i = first, last do
-            local item = items[i]
-            if item ~= nil then
+            local item = items and items[i] or nil
+            -- If an items array was provided but the slot is empty,
+            -- skip (transient gap during a filter rescan). If no items
+            -- array was provided, pass nil — caller looks up by index.
+            local emptySlot = items ~= nil and item == nil
+            if not emptySlot then
                 local y = self:_offsetOf(i)
                 local h = self:_heightOf(i)
                 local element = renderItem(item, i, i % 2 == 1)
                 if element then
-                    -- Wrap each row in an absolute-positioned host frame
                     rows[#rows + 1] = e("Frame", {
                         key              = "row:" .. i,
                         Size             = UDim2.new(1, 0, 0, h),
