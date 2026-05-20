@@ -134,19 +134,40 @@ function Renderer:_applyEvents(node, instance, oldEvents, newEvents)
     -- Disconnect events no longer present or whose handler changed.
     for name, conn in node.eventConns do
         if oldEvents[name] and (not newEvents[name] or newEvents[name] ~= oldEvents[name]) then
-            conn:Disconnect()
+            pcall(function() conn:Disconnect() end)
             node.eventConns[name] = nil
         end
     end
-    -- Connect new or changed events.
+    -- Connect new or changed events. Every step here is pcall-guarded
+    -- because in executor contexts the running thread may lack the
+    -- capabilities Roblox requires for signal access — failure to
+    -- connect should not abort the rest of the reconcile.
     for name, handler in newEvents do
         if not node.eventConns[name] then
             local ok, signal = pcall(function() return instance[name] end)
             if ok and typeof(signal) == "RBXScriptSignal" then
-                node.eventConns[name] = signal:Connect(function(...) handler(instance, ...) end)
+                local connOk, connOrErr = pcall(function()
+                    return signal:Connect(function(...)
+                        -- Each handler invocation is also pcall-guarded
+                        -- so a thrown handler can't kill the signal.
+                        local hOk, hErr = pcall(handler, instance, ...)
+                        if not hOk and self._logger then
+                            self._logger:warn("Renderer: handler '%s' on %s threw: %s",
+                                name, instance.ClassName, tostring(hErr))
+                        end
+                    end)
+                end)
+                if connOk then
+                    node.eventConns[name] = connOrErr
+                elseif self._logger then
+                    self._logger:warn("Renderer: signal:Connect('%s') failed on %s: %s",
+                        name, instance.ClassName, tostring(connOrErr))
+                end
             elseif self._logger then
+                local className = "?"
+                pcall(function() className = instance.ClassName end)
                 self._logger:warn("Renderer: '%s' is not a signal on %s",
-                    name, instance.ClassName)
+                    name, className)
             end
         end
     end

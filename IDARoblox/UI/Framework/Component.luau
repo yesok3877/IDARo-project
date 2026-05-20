@@ -132,6 +132,15 @@ end
 -- setState — batched merge that triggers a re-render
 -- ---------------------------------------------------------------------
 
+-- Defer-depth tracking: when setState is called from inside a defer
+-- chain (e.g. a Roblox signal handler that fires during reconcile),
+-- we can rapidly build up nested task.defer'd updates and hit Roblox's
+-- 80-deep re-entry limit. Above a safe threshold we switch from
+-- task.defer (immediate next-resume) to task.delay(0, ...) (next
+-- Heartbeat frame), which yields and resets the counter.
+local _SETSTATE_DEPTH = 0
+local _SETSTATE_DEPTH_LIMIT = 24                                     -- safe distance below Roblox's 80
+
 function Component:setState(updaterOrTable)
     if updaterOrTable == nil then return end
     if type(updaterOrTable) == "function" or type(updaterOrTable) == "table" then
@@ -145,14 +154,26 @@ function Component:setState(updaterOrTable)
     end
     if self._pendingUpdate then return end                          -- already scheduled
     self._pendingUpdate = true
-    task.defer(function()
-        if not self._mounted then return end
+
+    local cur = _SETSTATE_DEPTH
+    _SETSTATE_DEPTH = cur + 1
+    local function runUpdate()
+        _SETSTATE_DEPTH = math.max(0, _SETSTATE_DEPTH - 1)
+        if not self._mounted then self._pendingUpdate = false; return end
         self._pendingUpdate = false
         self:_applyPendingMerges()
         if self._renderer then
             self._renderer:_requestComponentUpdate(self._node)
         end
-    end)
+    end
+
+    if cur >= _SETSTATE_DEPTH_LIMIT then
+        -- Break the cascade: schedule on the next Heartbeat so the
+        -- defer chain unwinds and the re-entry counter resets.
+        task.delay(0, runUpdate)
+    else
+        task.defer(runUpdate)
+    end
 end
 
 function Component:_applyPendingMerges()
