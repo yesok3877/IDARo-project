@@ -446,6 +446,82 @@ local state = {
 }
 rawset(_G, "_IDARo_state", state)
 
+-- ---------------------------------------------------------------------
+-- Public API: _G._IDARo
+-- The simplest possible interface for testing. From any executor
+-- console you can do:
+--   _G._IDARo:loadScript(workspace.SomeLocalScript)
+--   _G._IDARo:loadBytes(getscriptbytecode(someScript))
+--   _G._IDARo:focus()              — bring the UI to front
+--   _G._IDARo:unload()             — tear down the workspace
+-- ---------------------------------------------------------------------
+
+local publicAPI = {}
+
+function publicAPI:loadScript(scriptInstance)
+    if not scriptInstance then
+        log:warn("_IDARo:loadScript called with nil — pass a LocalScript/ModuleScript/Script Instance")
+        return false
+    end
+    local ws = workspaceRef
+    if not ws then
+        log:warn("_IDARo:loadScript: workspace not mounted yet")
+        return false
+    end
+    local ok, err = pcall(function() ws:loadScript(scriptInstance) end)
+    if not ok then
+        log:error("_IDARo:loadScript failed: %s", tostring(err))
+        return false
+    end
+    return true
+end
+
+function publicAPI:loadBytes(bytes, label)
+    if type(bytes) ~= "string" or #bytes == 0 then
+        log:warn("_IDARo:loadBytes expects a non-empty bytecode string")
+        return false
+    end
+    local ws = workspaceRef
+    if not ws then
+        log:warn("_IDARo:loadBytes: workspace not mounted yet")
+        return false
+    end
+    local BytecodeParser = _G.IDARo.require("Analysis.BytecodeParser")
+    local ok, parsed = pcall(BytecodeParser.parse, bytes)
+    if not ok then
+        log:error("_IDARo:loadBytes: parser failed: %s", tostring(parsed))
+        if ws then ws:setStatusText("loadBytes: parser failed") end
+        return false
+    end
+    ws:setBytecode(parsed, bytes)
+    if label and ws.setStatusText then
+        ws:setStatusText(string.format("Loaded %s (%d protos)", label, parsed.stats.protos))
+    end
+    return true
+end
+
+function publicAPI:focus()
+    if screenGui then
+        pcall(function() screenGui.Enabled = true end)
+    end
+end
+
+function publicAPI:unload()
+    pcall(function() renderer:unmount() end)
+    pcall(function() if screenGui then screenGui:Destroy() end end)
+    rawset(_G, "_IDARo", nil)
+end
+
+function publicAPI:workspace()
+    return workspaceRef
+end
+
+function publicAPI:version()
+    return PROJECT_VERSION
+end
+
+rawset(_G, "_IDARo", publicAPI)
+
 log:info("%s ready (%d modules cached so far).",
     PROJECT_NAME, #_G.IDARo.cached())
 
