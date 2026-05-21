@@ -50,6 +50,7 @@ Component.__index = Component
 -- find an executor.
 local _elevatedDefer
 local _elevatedDelay
+local _elevatedSpawn
 local function _findElevatedTask()
     local sources = {}
     local getgenv = rawget(_G, "getgenv")
@@ -63,14 +64,15 @@ local function _findElevatedTask()
         if type(t) == "table"
             and type(t.defer) == "function"
             and type(t.delay) == "function" then
-            return t.defer, t.delay
+            return t.defer, t.delay, t.spawn
         end
     end
-    return task.defer, task.delay
+    return task.defer, task.delay, task.spawn
 end
-_elevatedDefer, _elevatedDelay = _findElevatedTask()
+_elevatedDefer, _elevatedDelay, _elevatedSpawn = _findElevatedTask()
 Component._elevatedDefer = _elevatedDefer
 Component._elevatedDelay = _elevatedDelay
+Component._elevatedSpawn = _elevatedSpawn
 
 -- Marker that Element.create checks to distinguish components from raw classes.
 Component.__isComponentClass = true

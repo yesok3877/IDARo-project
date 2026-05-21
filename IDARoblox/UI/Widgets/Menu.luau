@@ -89,6 +89,10 @@ function Menu:_closeSubmenu()
 end
 
 function Menu:_onTriggerActivate(index)
+    if self.logger then
+        self.logger:info("Menu: trigger %d activated (current open=%s)",
+            index, tostring(self.state.openIndex))
+    end
     if self.state.openIndex == index then
         self:_closeSubmenu()
     else

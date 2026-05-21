@@ -566,7 +566,8 @@ function Renderer:_requestComponentUpdate(node)
         -- before running. Heartbeat:Wait() is the most reliable yield
         -- in Roblox — task.defer and even task.delay(0,...) can resume
         -- on the same task scheduler tick in executor contexts.
-        task.spawn(function()
+        local spawn = Component._elevatedSpawn or task.spawn
+        spawn(function()
             local ok = pcall(function() RunService.Heartbeat:Wait() end)
             if not ok then task.wait(0) end
             doFlush()
