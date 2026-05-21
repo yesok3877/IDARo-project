@@ -18,10 +18,10 @@
 --   boot:onComplete(function() … hand off to workspace … end)
 -- =====================================================================
 
--- local Framework = script.Framework
--- local Widgets   = script.Widgets
--- local Splash    = script.Splash
--- local Views     = script.Views
+local Framework = script.Framework
+local Widgets   = script.Widgets
+local Splash    = script.Splash
+local Views     = script.Views
 
 local ThemeEngine       = _G.IDARo.require("UI.Framework.ThemeEngine")
 local FontMetrics       = _G.IDARo.require("UI.Framework.FontMetrics")
