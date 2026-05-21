@@ -229,30 +229,46 @@ function HeapGraphView:_scan()
         end
     end
 
-    -- Layout via Sugiyama. Nodes that survived from the previous scan
-    -- keep their position; new nodes get freshly laid-out positions.
-    local sugiyamaNodes = {}
-    for _, item in nodesList do
-        sugiyamaNodes[#sugiyamaNodes + 1] = { id = item.id }
-    end
-    local sugiyamaEdges = {}
-    for _, ed in edges do
-        sugiyamaEdges[#sugiyamaEdges + 1] = { from = ed.from, to = ed.to }
-    end
+    -- Layout: A heap graph is dense and not a clean DAG; Sugiyama tends to
+    -- pile dozens of nodes onto a single layer, sometimes producing
+    -- coordinates that overflow the canvas or get clipped to near-zero
+    -- widths. For interactive use a stable grid is friendlier — we
+    -- bucket by type (function / table / userdata / thread) into
+    -- columns so visually related objects cluster together.
     local laidOut = {}
     local layoutOk = false
-    if #sugiyamaNodes > 0 then
-        local ok2, result = pcall(Sugiyama.layout, sugiyamaNodes, sugiyamaEdges, {
-            layerSpacing  = NODE_H * 2.2,
-            nodeSpacing   = NODE_W * 1.2,
-            nodeWidth     = NODE_W,
-            nodeHeight    = NODE_H,
-        })
-        if ok2 and result and result.positions then
-            laidOut = result.positions
-            layoutOk = true
+    local TYPE_ORDER = { ["function"] = 1, table = 2, userdata = 3, thread = 4 }
+    local cols = {}                                                  -- type -> running y offset
+    local colXs = {}                                                 -- type -> x column
+    local typeCount = 0
+    for _, item in nodesList do
+        local t = item.obj.type or "?"
+        if not colXs[t] then
+            colXs[t] = typeCount * (NODE_W + 24)
+            cols[t] = 0
+            typeCount = typeCount + 1
         end
     end
+    -- Wrap each column at this many rows to keep the canvas reasonable.
+    local ROWS_PER_COL = 16
+    local subCol = {}                                                -- type -> current sub-column index
+    for _, item in nodesList do
+        local t = item.obj.type or "?"
+        local row = cols[t]
+        local sc = subCol[t] or 0
+        local x = colXs[t] + sc * (NODE_W + 18)
+        local y = row * (NODE_H + 10)
+        laidOut[item.id] = { x = x, y = y }
+        cols[t] = row + 1
+        if cols[t] >= ROWS_PER_COL then
+            cols[t] = 0
+            subCol[t] = sc + 1
+        end
+    end
+    layoutOk = true
+    -- We could still use Sugiyama if the user enables an "auto" mode
+    -- later — keep the import; we just don't run it here.
+    local _unused = Sugiyama
 
     -- Compose final GraphCanvas nodes, preserving positions for known ids
     local theme = self.theme

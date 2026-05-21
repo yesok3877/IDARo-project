@@ -85,6 +85,9 @@ function Menu:_openSubmenu(index)
 end
 
 function Menu:_closeSubmenu()
+    if self.logger then
+        self.logger:info("Menu: closeSubmenu (was open=%s)", tostring(self.state.openIndex))
+    end
     self:setState({ openIndex = nil })
 end
 
@@ -310,7 +313,19 @@ end
 function Menu:render()
     local theme = self.theme
     local items = self.props.items or {}
-    local size  = self.props.Size or UDim2.new(1, 0, 0, theme:size("menuBar"))
+    local barH  = theme:size("menuBar")
+    -- When closed, the Menu Frame is just the menu bar's height. When
+    -- a submenu is open, expand to fullscreen so the click-outside
+    -- catcher can actually receive input below the menu bar — Roblox
+    -- delivers clicks to a child only within its parent's bounds even
+    -- when ClipsDescendants=false, so a 24px-tall parent gives no room
+    -- for an 8000px catcher to do its job.
+    local size
+    if self.state.openIndex then
+        size = UDim2.fromScale(1, 1)
+    else
+        size = self.props.Size or UDim2.new(1, 0, 0, barH)
+    end
 
     local children = {}
     local cumulativeX = 0
@@ -330,8 +345,10 @@ function Menu:render()
         local item = items[self.state.openIndex]
         floats[#floats + 1] = e("TextButton", {
             key              = "catcher",
-            Position         = UDim2.fromOffset(-4000, theme:size("menuBar")),
-            Size             = UDim2.fromOffset(8000, 8000),
+            -- Cover the parent below the menu bar. Parent is fullscreen
+            -- when open so this catches every click outside the dropdown.
+            Position         = UDim2.fromOffset(0, theme:size("menuBar")),
+            Size             = UDim2.new(1, 0, 1, -theme:size("menuBar")),
             BackgroundTransparency = 1,
             Text             = "",
             AutoButtonColor  = false,
@@ -345,16 +362,25 @@ function Menu:render()
     return e("Frame", {
         Size              = size,
         Position          = self.props.Position,
-        BackgroundColor3  = theme:color("background"),
+        BackgroundTransparency = 1,                                 -- transparent so expanded fullscreen doesn't tint everything
         BorderSizePixel   = 0,
         ZIndex            = 10,
         ClipsDescendants  = false,
     }, {
-        -- Bottom border
+        -- Visible menu-bar background (only the top barH pixels)
+        e("Frame", {
+            key              = "bar-bg",
+            Position         = UDim2.fromOffset(0, 0),
+            Size             = UDim2.new(1, 0, 0, barH),
+            BackgroundColor3 = theme:color("background"),
+            BorderSizePixel  = 0,
+            ZIndex           = 10,
+        }),
+        -- Bottom border of the bar
         e("Frame", {
             key              = "underline",
             Size             = UDim2.new(1, 0, 0, 1),
-            Position         = UDim2.new(0, 0, 1, -1),
+            Position         = UDim2.fromOffset(0, barH - 1),
             BackgroundColor3 = theme:color("border"),
             BorderSizePixel  = 0,
             ZIndex           = 10,

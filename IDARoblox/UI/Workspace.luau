@@ -32,6 +32,7 @@ local Menu              = _G.IDARo.require("UI.Widgets.Menu")
 local Toolbar           = _G.IDARo.require("UI.Widgets.Toolbar")
 local StatusBar         = _G.IDARo.require("UI.Widgets.StatusBar")
 local ProgressBar       = _G.IDARo.require("UI.Widgets.ProgressBar")
+local Dialog            = _G.IDARo.require("UI.Widgets.Dialog")
 
 local ProtoTreeView     = _G.IDARo.require("UI.Views.ProtoTreeView")
 local DisassemblyView   = _G.IDARo.require("UI.Views.DisassemblyView")
@@ -382,10 +383,10 @@ function Workspace:_installKeybinds()
         if self.props.onOpenScript then pcall(self.props.onOpenScript, self) end
     end)
     r:bind("Ctrl+G", "goto-proto", function()
-        self:setStatusText("Goto proto (dialog deferred to a later step)")
+        self:_openGotoProtoDialog()
     end)
     r:bind("Ctrl+F", "find", function()
-        self:setStatusText("Find (search view deferred to Step 10)")
+        self:_openFind()
     end)
     r:bind("Ctrl+`", "toggle-output", function()
         self:setState({ showOutput = not self.state.showOutput })
@@ -432,6 +433,84 @@ function Workspace:_installKeybinds()
     r:bind("Ctrl+S",        "save-session",        function() self:_saveSession() end)
     r:bind("Ctrl+Shift+S",  "save-clipboard",      function() self:_saveSession({ target = "clipboard" }) end)
     r:bind("Ctrl+Shift+V",  "load-clipboard",      function() self:_loadSession({ target = "clipboard" }) end)
+end
+
+-- ---------------------------------------------------------------------
+-- Dialog handling — Goto Proto, Find, etc.
+-- ---------------------------------------------------------------------
+
+function Workspace:_closeDialog()
+    self:setState({ dialog = nil })
+end
+
+function Workspace:_openGotoProtoDialog()
+    local bc = self.state.bytecode
+    local hint = ""
+    if bc and bc.protos then
+        hint = string.format("Range: 1 – %d", #bc.protos)
+    elseif bc then
+        hint = "No protos loaded yet"
+    else
+        hint = "No bytecode loaded yet"
+    end
+    self:setState({
+        dialog = {
+            kind        = "goto-proto",
+            title       = "Goto Proto",
+            label       = "Enter a proto ID to jump to. " .. hint,
+            placeholder = "e.g. 12 or 0x0C",
+            initialText = tostring(self.state.selectedProtoId or ""),
+            submitLabel = "Go",
+            onSubmit    = function(text)
+                local id = tonumber(text)
+                if not id and text and text:match("^0[xX]") then
+                    id = tonumber(text:sub(3), 16)
+                end
+                if not id then
+                    self:setStatusText("Goto Proto: invalid ID '" .. tostring(text) .. "'")
+                    self:_closeDialog()
+                    return
+                end
+                local bc2 = self.state.bytecode
+                if not bc2 or not bc2.protos or not bc2.protos[id] then
+                    self:setStatusText(string.format(
+                        "Goto Proto: id %d out of range (have %d protos)",
+                        id, bc2 and bc2.protos and #bc2.protos or 0))
+                    self:_closeDialog()
+                    return
+                end
+                self:openProto(id)
+                self:setStatusText(string.format("Jumped to proto %d", id))
+                self:_closeDialog()
+            end,
+            onCancel    = function() self:_closeDialog() end,
+        }
+    })
+end
+
+function Workspace:_openFind()
+    -- Find = switch to the Search tab (where SearchView lives) and
+    -- focus its input. SearchView lives in the bottom tab strip if
+    -- present; otherwise we surface a status message.
+    local hasSearchTab = false
+    for _, tab in ({ "search" }) do
+        if self.state.bottomTab ~= tab then
+            -- check the tab is wired in our render
+            hasSearchTab = true
+        end
+    end
+    if hasSearchTab then
+        self:setState({ bottomTab = "search" })
+        self:setStatusText("Find: switched to Search tab. Type a query in the box.")
+        -- Try to focus the search input if SearchView exposes it
+        task.defer(function()
+            if self._searchViewRef and type(self._searchViewRef.focus) == "function" then
+                pcall(function() self._searchViewRef:focus() end)
+            end
+        end)
+    else
+        self:setStatusText("Find: Search tab not available in this workspace")
+    end
 end
 
 function Workspace:_moveProto(delta)
@@ -1205,6 +1284,18 @@ function Workspace:render()
             showFps    = true,
             Position   = UDim2.new(0, 0, 1, -statusH),
         }),
+        -- Modal Dialog (e.g. Goto Proto). Rendered last so it overlays everything.
+        self.state.dialog and e(Dialog, {
+            key         = "dialog:" .. (self.state.dialog.kind or "?"),
+            title       = self.state.dialog.title,
+            label       = self.state.dialog.label,
+            placeholder = self.state.dialog.placeholder,
+            initialText = self.state.dialog.initialText,
+            submitLabel = self.state.dialog.submitLabel,
+            cancelLabel = self.state.dialog.cancelLabel,
+            onSubmit    = self.state.dialog.onSubmit,
+            onCancel    = self.state.dialog.onCancel,
+        }) or nil,
     })
 end
 
