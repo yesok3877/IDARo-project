@@ -258,7 +258,20 @@ function ScrollVirtualizer:render()
         [Element.Ref] = function(instance)
             if instance then
                 self._scrollFrame = instance
-                self:setState({ viewportSize = instance.AbsoluteWindowSize })
+                local sz = instance.AbsoluteWindowSize
+                local cur = self.state.viewportSize
+                if not cur or cur.X ~= sz.X or cur.Y ~= sz.Y then
+                    -- Defer the setState so it doesn't fire during the
+                    -- reconcile that just mounted this frame (which
+                    -- would trigger the cascade).
+                    task.defer(function()
+                        if not self.state or not self._mounted then return end
+                        local sz2 = self._scrollFrame and self._scrollFrame.AbsoluteWindowSize or sz
+                        local c = self.state.viewportSize
+                        if c and c.X == sz2.X and c.Y == sz2.Y then return end
+                        self:setState({ viewportSize = sz2 })
+                    end)
+                end
             else
                 self._scrollFrame = nil
             end

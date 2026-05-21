@@ -504,6 +504,7 @@ function Renderer:_requestComponentUpdate(node)
         -- re-entry stack. By keeping it true and draining the queue in
         -- this same coroutine, we never accumulate task.defer levels.
         local iterations = 0
+        local renderCounts = {}                                       -- comp -> times rendered
         while next(self._pendingUpdates) and iterations < _FLUSH_MAX_ITERATIONS do
             iterations += 1
             local pending = self._pendingUpdates
@@ -512,6 +513,7 @@ function Renderer:_requestComponentUpdate(node)
                 if n.componentInst then
                     local inst = n.componentInst
                     if inst._mounted then
+                        renderCounts[inst] = (renderCounts[inst] or 0) + 1
                         -- Apply queued state merges that setState() left for us.
                         inst:_applyPendingMerges()
                         local prevProps, prevState = inst.props, inst.state
@@ -535,12 +537,29 @@ function Renderer:_requestComponentUpdate(node)
             end
         end
         if iterations >= _FLUSH_MAX_ITERATIONS and self._logger then
+            -- Build a sorted ranking of who re-rendered how many times so
+            -- the looping component is named directly.
+            local ranked = {}
+            for inst, count in renderCounts do
+                if count >= 2 then                                   -- mention re-renderers, not single-pass nodes
+                    local cls = "?"
+                    pcall(function()
+                        cls = inst.__className
+                            or (getmetatable(inst) and getmetatable(inst).__name)
+                            or "?"
+                    end)
+                    ranked[#ranked + 1] = string.format("%s x%d", cls, count)
+                end
+            end
+            table.sort(ranked)
             self._logger:warn(
-                "Renderer: flush drained at iteration cap (%d); still %d pending",
-                _FLUSH_MAX_ITERATIONS, (function()
-                    local n = 0; for _ in self._pendingUpdates do n += 1 end; return n
-                end)())
+                "Renderer: flush cap (%d iters) — re-render hotspots: %s",
+                _FLUSH_MAX_ITERATIONS, table.concat(ranked, ", "))
         end
+        -- Only release the flag once the queue is drained.
+        self._flushScheduled = false
+        _FLUSH_DEPTH = math.max(0, _FLUSH_DEPTH - 1)
+    end
         -- Only release the flag once the queue is drained.
         self._flushScheduled = false
         _FLUSH_DEPTH = math.max(0, _FLUSH_DEPTH - 1)
