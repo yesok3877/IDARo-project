@@ -529,10 +529,14 @@ function GCHeapView:render()
         e(ScrollVirtualizer, {
             Size = UDim2.new(1, -(TREE_W + INSPECTOR_W), 1, -(TOP_BAR_H + HISTO_H + FOOTER_H)),
             Position = UDim2.fromOffset(TREE_W, TOP_BAR_H + HISTO_H),
+            items     = objects,
             itemCount = #objects,
             itemHeight = ROW_H,
-            renderItem = function(i, w)
-                return self:_renderObjectRow(objects[i], i, w)
+            renderItem = function(item, i, _isOdd)
+    -- Fall back to looking up by index if items prop wasn't passed
+    local row = item ~= nil and item or (objects and objects[i])
+    if row == nil then return nil end
+    return self:_renderObjectRow(row, i, _isOdd)
             end,
         }),
 

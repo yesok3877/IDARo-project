@@ -167,14 +167,14 @@ end
 -- setState — batched merge that triggers a re-render
 -- ---------------------------------------------------------------------
 
--- Defer-depth tracking: when setState is called from inside a defer
--- chain (e.g. a Roblox signal handler that fires during reconcile),
--- we can rapidly build up nested task.defer'd updates and hit Roblox's
--- 80-deep re-entry limit. Above a safe threshold we switch from
--- task.defer (immediate next-resume) to task.delay(0, ...) (next
--- Heartbeat frame), which yields and resets the counter.
-local _SETSTATE_DEPTH = 0
-local _SETSTATE_DEPTH_LIMIT = 24                                     -- safe distance below Roblox's 80
+-- Re-entry depth handling for the render flush is now in
+-- Renderer:_requestComponentUpdate — setState is just an enqueue
+-- here, and the renderer's flush yields a frame via
+-- RunService.Heartbeat:Wait() when its own re-entry counter gets too
+-- high. Keeping the deferral in one place means we add exactly one
+-- task.defer per setState chain instead of two, which halves how
+-- quickly we approach Roblox's 80-deep limit when signals trigger
+-- setState during reconcile.
 
 function Component:setState(updaterOrTable)
     if updaterOrTable == nil then return end
@@ -187,27 +187,15 @@ function Component:setState(updaterOrTable)
         self:_applyPendingMerges()                                  -- pre-mount: apply synchronously
         return
     end
-    if self._pendingUpdate then return end                          -- already scheduled
-    self._pendingUpdate = true
-
-    local cur = _SETSTATE_DEPTH
-    _SETSTATE_DEPTH = cur + 1
-    local function runUpdate()
-        _SETSTATE_DEPTH = math.max(0, _SETSTATE_DEPTH - 1)
-        if not self._mounted then self._pendingUpdate = false; return end
-        self._pendingUpdate = false
-        self:_applyPendingMerges()
-        if self._renderer then
-            self._renderer:_requestComponentUpdate(self._node)
-        end
-    end
-
-    if cur >= _SETSTATE_DEPTH_LIMIT then
-        -- Break the cascade: schedule on the next Heartbeat so the
-        -- defer chain unwinds and the re-entry counter resets.
-        _elevatedDelay(0, runUpdate)
+    -- Let the renderer batch + schedule. The renderer's
+    -- _requestComponentUpdate is responsible for applying pending
+    -- merges before re-rendering, so we don't need our own task.defer
+    -- here. Consolidating to a single defer eliminates the 2-deep
+    -- defer chain that was driving the re-entrancy cascade.
+    if self._renderer then
+        self._renderer:_requestComponentUpdate(self._node)
     else
-        _elevatedDefer(runUpdate)
+        self:_applyPendingMerges()
     end
 end
 
@@ -231,17 +219,14 @@ end
 -- Sentinel for explicit nil-set inside a state merge
 Component.None = newproxy(false)
 
--- forceUpdate — bypass setState's merge logic to trigger a re-render
+-- forceUpdate — bypass setState's merge logic to trigger a re-render.
+-- Delegates scheduling to the renderer (same path as setState) so its
+-- depth-aware flush handles cascades.
 function Component:forceUpdate()
     if not self._mounted then return end
-    if self._pendingUpdate then return end
-    self._pendingUpdate = true
-    task.defer(function()
-        self._pendingUpdate = false
-        if self._renderer and self._mounted then
-            self._renderer:_requestComponentUpdate(self._node)
-        end
-    end)
+    if self._renderer then
+        self._renderer:_requestComponentUpdate(self._node)
+    end
 end
 
 -- ---------------------------------------------------------------------

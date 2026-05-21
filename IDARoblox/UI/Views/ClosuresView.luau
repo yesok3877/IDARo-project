@@ -583,10 +583,14 @@ function ClosuresView:render()
         e(ScrollVirtualizer, {
             Size = UDim2.new(0, LIST_W, 1, -(TOP_BAR_H + FOOTER_H)),
             Position = UDim2.fromOffset(0, TOP_BAR_H),
+            items     = rows,
             itemCount = #closures,
             itemHeight = ROW_H,
-            renderItem = function(i)
-                return self:_renderClosureRow(closures[i], i)
+            renderItem = function(item, i, _isOdd)
+    -- Fall back to looking up by index if items prop wasn't passed
+    local row = item ~= nil and item or (rows and rows[i])
+    if row == nil then return nil end
+    return self:_renderClosureRow(row, i, _isOdd)
             end,
         }),
         self:_renderInspector(),

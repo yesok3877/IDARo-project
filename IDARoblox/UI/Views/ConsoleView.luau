@@ -444,10 +444,14 @@ function ConsoleView:render()
         e(ScrollVirtualizer, {
             Size = UDim2.new(1, 0, 1, -(TOP_BAR_H + FOOTER_H)),
             Position = UDim2.fromOffset(0, TOP_BAR_H),
+            items     = entries,
             itemCount = #entries,
             itemHeight = ROW_H,
-            renderItem = function(i)
-                return self:_renderRow(entries[i], i)
+            renderItem = function(item, i, _isOdd)
+    -- Fall back to looking up by index if items prop wasn't passed
+    local row = item ~= nil and item or (entries and entries[i])
+    if row == nil then return nil end
+    return self:_renderRow(row, i, _isOdd)
             end,
             stickyBottom = self.state.autoScroll,
         }),

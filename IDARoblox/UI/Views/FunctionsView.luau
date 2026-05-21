@@ -390,12 +390,14 @@ function FunctionsView:render()
         e(ScrollVirtualizer, {
             Size = UDim2.new(1, 0, 1, -(28 + HEADER_H + FOOTER_H)),
             Position = UDim2.fromOffset(0, 28 + HEADER_H),
+            items     = rows,
             itemCount = #rows,
             itemHeight = ROW_HEIGHT,
-            renderItem = function(i, _width)
-                local r = rows[i]
-                if not r then return nil end
-                return self:_renderRow(r, i, self._headerWidth or 800)
+            renderItem = function(item, i, _isOdd)
+    -- Fall back to looking up by index if items prop wasn't passed
+    local row = item ~= nil and item or (rows and rows[i])
+    if row == nil then return nil end
+    return self:_renderRow(row, i, _isOdd)
             end,
         }),
 

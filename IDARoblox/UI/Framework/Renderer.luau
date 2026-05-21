@@ -476,40 +476,68 @@ end
 -- Component update requests (from setState/forceUpdate)
 -- ---------------------------------------------------------------------
 
+-- Defer-depth tracking for the renderer's flush. When a re-render
+-- causes signals to fire that call setState again, the flush re-enters
+-- itself; above a safe threshold we yield a frame via Heartbeat:Wait()
+-- inside a task.spawn'd coroutine, which is the most reliable way to
+-- force the Roblox scheduler to reset its task.defer re-entry counter.
+local _FLUSH_DEPTH = 0
+local _FLUSH_DEPTH_LIMIT = 16
+local RunService = game:GetService("RunService")
+
 function Renderer:_requestComponentUpdate(node)
     if not node or node.kind ~= "comp" then return end
     self._pendingUpdates[node] = true
-    if not self._flushScheduled then
-        self._flushScheduled = true
-        (Component._elevatedDefer or task.defer)(function()
-            self._flushScheduled = false
-            local pending = self._pendingUpdates
-            self._pendingUpdates = {}
-            for n in pending do
-                if n.componentInst then
-                    local inst = n.componentInst
-                    if inst._mounted then
-                        -- Use current props (no new ones) — state-driven re-render.
-                        local prevProps, prevState = inst.props, inst.state
-                        local rendered = inst:render()
-                        if rendered == nil then
-                            local prev = n.childNodes[1]
-                            if prev then self:_unmountNode(prev) end
-                            n.childNodes[1] = nil
+    if self._flushScheduled then return end
+    self._flushScheduled = true
+
+    local cur = _FLUSH_DEPTH
+    _FLUSH_DEPTH = cur + 1
+
+    local function doFlush()
+        _FLUSH_DEPTH = math.max(0, _FLUSH_DEPTH - 1)
+        self._flushScheduled = false
+        local pending = self._pendingUpdates
+        self._pendingUpdates = {}
+        for n in pending do
+            if n.componentInst then
+                local inst = n.componentInst
+                if inst._mounted then
+                    -- Apply queued state merges that setState() left for us.
+                    inst:_applyPendingMerges()
+                    local prevProps, prevState = inst.props, inst.state
+                    local rendered = inst:render()
+                    if rendered == nil then
+                        local prev = n.childNodes[1]
+                        if prev then self:_unmountNode(prev) end
+                        n.childNodes[1] = nil
+                    else
+                        local prev = n.childNodes[1]
+                        if prev then
+                            n.childNodes[1] = self:_reconcile(prev, rendered, n.parentInstance)
                         else
-                            local prev = n.childNodes[1]
-                            if prev then
-                                n.childNodes[1] = self:_reconcile(prev, rendered, n.parentInstance)
-                            else
-                                n.childNodes[1] = self:_mountNode(rendered, n.parentInstance)
-                            end
+                            n.childNodes[1] = self:_mountNode(rendered, n.parentInstance)
                         end
-                        inst:_fireDidUpdate(prevProps, prevState)
-                        self._stats.updatesRun += 1
                     end
+                    inst:_fireDidUpdate(prevProps, prevState)
+                    self._stats.updatesRun += 1
                 end
             end
+        end
+    end
+
+    if cur >= _FLUSH_DEPTH_LIMIT then
+        -- Above the limit, spawn a coroutine that waits one Heartbeat
+        -- before running. Heartbeat:Wait() is the most reliable yield
+        -- in Roblox — task.defer and even task.delay(0,...) can resume
+        -- on the same task scheduler tick in executor contexts.
+        task.spawn(function()
+            local ok = pcall(function() RunService.Heartbeat:Wait() end)
+            if not ok then task.wait(0) end
+            doFlush()
         end)
+    else
+        (Component._elevatedDefer or task.defer)(doFlush)
     end
 end
 

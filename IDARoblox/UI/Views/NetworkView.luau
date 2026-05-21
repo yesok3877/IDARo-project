@@ -524,10 +524,14 @@ function NetworkView:render()
         e(ScrollVirtualizer, {
             Size = UDim2.new(1, -DETAILS_W, 1, -(TOP_BAR_H + FOOTER_H)),
             Position = UDim2.fromOffset(0, TOP_BAR_H),
+            items     = filtered,
             itemCount = #filtered,
             itemHeight = ROW_H,
-            renderItem = function(i)
-                return self:_renderEntryRow(filtered[i], i)
+            renderItem = function(item, i, _isOdd)
+    -- Fall back to looking up by index if items prop wasn't passed
+    local row = item ~= nil and item or (filtered and filtered[i])
+    if row == nil then return nil end
+    return self:_renderEntryRow(row, i, _isOdd)
             end,
             stickyBottom = true,                                     -- auto-scroll to newest
         }),
