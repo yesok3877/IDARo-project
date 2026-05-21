@@ -23,10 +23,10 @@
 --   :loadScript(scriptInstance)     — parseScript(...) + setBytecode
 -- =====================================================================
 
--- local Component         = _G.IDARo.require("UI.Framework.Component")
--- local Element           = _G.IDARo.require("UI.Framework.Element")
--- local LayoutEngine      = _G.IDARo.require("UI.Framework.LayoutEngine")
--- local InputRouter       = _G.IDARo.require("UI.Framework.InputRouter")
+local Component         = _G.IDARo.require("UI.Framework.Component")
+local Element           = _G.IDARo.require("UI.Framework.Element")
+local LayoutEngine      = _G.IDARo.require("UI.Framework.LayoutEngine")
+local InputRouter       = _G.IDARo.require("UI.Framework.InputRouter")
 
 local Menu              = _G.IDARo.require("UI.Widgets.Menu")
 local Toolbar           = _G.IDARo.require("UI.Widgets.Toolbar")
