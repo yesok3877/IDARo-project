@@ -560,10 +560,6 @@ function Renderer:_requestComponentUpdate(node)
         self._flushScheduled = false
         _FLUSH_DEPTH = math.max(0, _FLUSH_DEPTH - 1)
     end
-        -- Only release the flag once the queue is drained.
-        self._flushScheduled = false
-        _FLUSH_DEPTH = math.max(0, _FLUSH_DEPTH - 1)
-    end
 
     if cur >= _FLUSH_DEPTH_LIMIT then
         -- Above the limit, spawn a coroutine that waits one Heartbeat
