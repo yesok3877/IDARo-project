@@ -116,6 +116,10 @@ function Menu:_onTriggerHover(index, hovering)
 end
 
 function Menu:_onItemClick(topIndex, item)
+    if self.logger then
+        self.logger:info("Menu: item clicked label='%s' action='%s' hasOnClick=%s",
+            tostring(item.label), tostring(item.action), tostring(item.onClick ~= nil))
+    end
     self:_closeSubmenu()
     if item.onClick then
         local ok, err = pcall(item.onClick)
