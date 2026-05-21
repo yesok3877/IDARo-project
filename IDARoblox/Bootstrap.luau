@@ -355,6 +355,40 @@ renderer:mount(
                     "Open: programmatic only at this step (call :loadScript()).")
             end
         end,
+        -- File → Open Script…
+        -- In executor environments there's no file picker, so this drives
+        -- a placeholder status message + offers the public API path.
+        onOpenScript = function()
+            if workspaceRef then
+                workspaceRef:setStatusText(
+                    "Open Script: call _G._IDARo:loadScript(scriptInstance) from console.")
+            end
+            log:info("Open Script invoked. Use _G._IDARo:loadScript(<Script>) from the console.")
+        end,
+        -- File → Reload
+        -- Re-fetch Bootstrap from the loader URL and re-execute. We do
+        -- this by clearing the module cache and re-running the top-level
+        -- _G.IDARo.require("Bootstrap") — the user's outer loadstring
+        -- can then call back into a fresh workspace.
+        onReload = function()
+            log:info("Reload requested. Clearing module cache.")
+            if _G.IDARo and _G.IDARo._moduleCache then
+                table.clear(_G.IDARo._moduleCache)
+            end
+            if workspaceRef then
+                workspaceRef:setStatusText("Reload: module cache cleared. Re-run Bootstrap to apply.")
+            end
+        end,
+        -- File → Quit
+        -- Tear down the renderer + remove the ScreenGui, fully unmount.
+        onQuit = function()
+            log:info("Quit requested. Unmounting IDARo.")
+            pcall(function() renderer:unmount() end)
+            pcall(function() if screenGui then screenGui:Destroy() end end)
+            if _G.IDARo then
+                _G.IDARo._mounted = false
+            end
+        end,
         onMount = function(component) workspaceRef = component end,
     }),
     workspaceSG)
