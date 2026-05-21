@@ -483,47 +483,67 @@ end
 -- force the Roblox scheduler to reset its task.defer re-entry counter.
 local _FLUSH_DEPTH = 0
 local _FLUSH_DEPTH_LIMIT = 16
+local _FLUSH_MAX_ITERATIONS = 32                                     -- bounds runaway re-queues
 local RunService = game:GetService("RunService")
 
 function Renderer:_requestComponentUpdate(node)
     if not node or node.kind ~= "comp" then return end
     self._pendingUpdates[node] = true
-    if self._flushScheduled then return end
+    if self._flushScheduled then return end                          -- already queued
     self._flushScheduled = true
 
     local cur = _FLUSH_DEPTH
     _FLUSH_DEPTH = cur + 1
 
     local function doFlush()
-        _FLUSH_DEPTH = math.max(0, _FLUSH_DEPTH - 1)
-        self._flushScheduled = false
-        local pending = self._pendingUpdates
-        self._pendingUpdates = {}
-        for n in pending do
-            if n.componentInst then
-                local inst = n.componentInst
-                if inst._mounted then
-                    -- Apply queued state merges that setState() left for us.
-                    inst:_applyPendingMerges()
-                    local prevProps, prevState = inst.props, inst.state
-                    local rendered = inst:render()
-                    if rendered == nil then
-                        local prev = n.childNodes[1]
-                        if prev then self:_unmountNode(prev) end
-                        n.childNodes[1] = nil
-                    else
-                        local prev = n.childNodes[1]
-                        if prev then
-                            n.childNodes[1] = self:_reconcile(prev, rendered, n.parentInstance)
+        -- Critical: keep self._flushScheduled = true for the entire
+        -- duration of the flush. setStates that fire during reconcile
+        -- (Roblox signals like Changed.AbsoluteSize, MouseEnter, etc.)
+        -- call _requestComponentUpdate; if _flushScheduled were false
+        -- they'd schedule new task.defers, building up Roblox's 80-deep
+        -- re-entry stack. By keeping it true and draining the queue in
+        -- this same coroutine, we never accumulate task.defer levels.
+        local iterations = 0
+        while next(self._pendingUpdates) and iterations < _FLUSH_MAX_ITERATIONS do
+            iterations += 1
+            local pending = self._pendingUpdates
+            self._pendingUpdates = {}
+            for n in pending do
+                if n.componentInst then
+                    local inst = n.componentInst
+                    if inst._mounted then
+                        -- Apply queued state merges that setState() left for us.
+                        inst:_applyPendingMerges()
+                        local prevProps, prevState = inst.props, inst.state
+                        local rendered = inst:render()
+                        if rendered == nil then
+                            local prev = n.childNodes[1]
+                            if prev then self:_unmountNode(prev) end
+                            n.childNodes[1] = nil
                         else
-                            n.childNodes[1] = self:_mountNode(rendered, n.parentInstance)
+                            local prev = n.childNodes[1]
+                            if prev then
+                                n.childNodes[1] = self:_reconcile(prev, rendered, n.parentInstance)
+                            else
+                                n.childNodes[1] = self:_mountNode(rendered, n.parentInstance)
+                            end
                         end
+                        inst:_fireDidUpdate(prevProps, prevState)
+                        self._stats.updatesRun += 1
                     end
-                    inst:_fireDidUpdate(prevProps, prevState)
-                    self._stats.updatesRun += 1
                 end
             end
         end
+        if iterations >= _FLUSH_MAX_ITERATIONS and self._logger then
+            self._logger:warn(
+                "Renderer: flush drained at iteration cap (%d); still %d pending",
+                _FLUSH_MAX_ITERATIONS, (function()
+                    local n = 0; for _ in self._pendingUpdates do n += 1 end; return n
+                end)())
+        end
+        -- Only release the flag once the queue is drained.
+        self._flushScheduled = false
+        _FLUSH_DEPTH = math.max(0, _FLUSH_DEPTH - 1)
     end
 
     if cur >= _FLUSH_DEPTH_LIMIT then
