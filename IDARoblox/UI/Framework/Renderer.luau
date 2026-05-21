@@ -561,20 +561,14 @@ function Renderer:_requestComponentUpdate(node)
         _FLUSH_DEPTH = math.max(0, _FLUSH_DEPTH - 1)
     end
 
-    if cur >= _FLUSH_DEPTH_LIMIT then
-        -- Above the limit, spawn a coroutine that waits one Heartbeat
-        -- before running. Heartbeat:Wait() is the most reliable yield
-        -- in Roblox — task.defer and even task.delay(0,...) can resume
-        -- on the same task scheduler tick in executor contexts.
-        local spawn = Component._elevatedSpawn or task.spawn
-        spawn(function()
-            local ok = pcall(function() RunService.Heartbeat:Wait() end)
-            if not ok then task.wait(0) end
-            doFlush()
-        end)
-    else
-        (Component._elevatedDefer or task.defer)(doFlush)
-    end
+    -- Always use plain task.defer. The drain-loop in doFlush already
+    -- prevents nested task.defer levels from accumulating (only one
+    -- task.defer per flush coroutine), so the 80-deep limit is no
+    -- longer in play. We avoid task.spawn + Heartbeat:Wait because
+    -- some Roblox/executor combinations drop the calling thread's
+    -- "Plugin" capability when a coroutine resumes from a yield —
+    -- which would break setInstanceProp on every reconcile.
+    task.defer(doFlush)
 end
 
 -- ---------------------------------------------------------------------
