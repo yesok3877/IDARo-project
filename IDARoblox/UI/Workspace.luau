@@ -94,6 +94,24 @@ Component.setDefaultProps(Workspace, {
 -- ---------------------------------------------------------------------
 
 function Workspace:init(props)
+    -- Stable handler references. Bound here once so that re-renders
+    -- don't pass new closures into child views — passing fresh
+    -- closures every render makes the child's didUpdate fire every
+    -- frame, which triggers its setState, which re-queues the parent,
+    -- which sends a fresh closure, which… infinite loop. Don't recreate
+    -- callbacks on each render — bind them once and reuse.
+    self._onCopyResult     = function(ok, warnings) self:_setToast(ok, warnings) end
+    self._onClearXrefQuery = function() self:setState({ xrefQuery = nil }) end
+    self._onBlockSelectFn  = function(id, block) self:_onBlockSelect(id, block) end
+    self._onBlockActivateFn = function(id, block) self:_onBlockActivate(id, block) end
+    self._onGraphMount     = function(component) self._graphRef = component end
+    self._onGraphUnmount   = function() self._graphRef = nil end
+    self._onDecLineSelect  = function(line, text) self:_onDecompLineSelect(line, text) end
+    self._onRowSelectFn    = function(pc, row) self:_onRowSelect(pc, row) end
+    self._onRowActivateFn  = function(pc, row) self:_onRowActivate(pc, row) end
+    self._onDisasmMount    = function(component) self._disasmRef = component end
+    self._onDisasmUnmount  = function() self._disasmRef = nil end
+
     self.state = {
         bytecode        = props.bytecode,
         bytecodeBytes   = props.bytecodeBytes,                       -- raw bytes for session save
@@ -843,26 +861,26 @@ function Workspace:render()
                 cfg              = self.state.currentCfg,
                 stream           = self.state.currentStream,
                 selectedBlockId  = self.state.selectedBlockId,
-                onSelectBlock    = function(id, block) self:_onBlockSelect(id, block) end,
-                onActivateBlock  = function(id, block) self:_onBlockActivate(id, block) end,
-                onMount          = function(component) self._graphRef = component end,
-                onUnmount        = function() self._graphRef = nil end,
+                onSelectBlock = self._onBlockSelectFn,
+                onActivateBlock = self._onBlockActivateFn,
+                onMount = self._onGraphMount,
+                onUnmount = self._onGraphUnmount,
             })
         elseif mode == "decomp" then
             content = e(PseudocodeView, {
                 decompiler     = self.state.decompiler,
                 protoId        = self.state.selectedProtoId,
                 selectedLine   = self.state.selectedDecLine,
-                onSelectLine   = function(line, text) self:_onDecompLineSelect(line, text) end,
+                onSelectLine = self._onDecLineSelect,
             })
         else
             content = e(DisassemblyView, {
                 stream         = self.state.currentStream,
                 selectedPc     = self.state.selectedPc,
-                onSelectRow    = function(pc, row) self:_onRowSelect(pc, row) end,
-                onActivateRow  = function(pc, row) self:_onRowActivate(pc, row) end,
-                onMount        = function(component) self._disasmRef = component end,
-                onUnmount      = function() self._disasmRef = nil end,
+                onSelectRow = self._onRowSelectFn,
+                onActivateRow = self._onRowActivateFn,
+                onMount = self._onDisasmMount,
+                onUnmount = self._onDisasmUnmount,
             })
         end
         return e(Panel, { title = title }, { content })
@@ -1030,7 +1048,7 @@ function Workspace:render()
                 xrefIndex    = self.state.xrefIndex,
                 query        = self.state.xrefQuery,
                 onJumpToSite = function(protoId, pc, site) self:_onXrefJump(protoId, pc, site) end,
-                onClearQuery = function() self:setState({ xrefQuery = nil }) end,
+                onClearQuery = self._onClearXrefQuery,
             })),
             pane("search", e(SearchView, {
                 bytecode     = self.state.bytecode,
@@ -1062,45 +1080,31 @@ function Workspace:render()
             })),
             pane("functions", e(FunctionsView, {
                 runtime = self.state.runtime,
-                onCopyResult = function(ok, warnings)
-                    self:_setToast(ok, warnings)
-                end,
+                onCopyResult = self._onCopyResult,
             })),
             pane("closures", e(ClosuresView, {
                 runtime = self.state.runtime,
-                onCopyResult = function(ok, warnings)
-                    self:_setToast(ok, warnings)
-                end,
+                onCopyResult = self._onCopyResult,
             })),
             pane("gcheap", e(GCHeapView, {
                 runtime = self.state.runtime,
-                onCopyResult = function(ok, warnings)
-                    self:_setToast(ok, warnings)
-                end,
+                onCopyResult = self._onCopyResult,
             })),
             pane("heapgraph", e(HeapGraphView, {
                 runtime = self.state.runtime,
-                onCopyResult = function(ok, warnings)
-                    self:_setToast(ok, warnings)
-                end,
+                onCopyResult = self._onCopyResult,
             })),
             pane("network", e(NetworkView, {
                 tracer = self.state.runtime and self.state.runtime.network,
-                onCopyResult = function(ok, warnings)
-                    self:_setToast(ok, warnings)
-                end,
+                onCopyResult = self._onCopyResult,
             })),
             pane("console", e(ConsoleView, {
-                onCopyResult = function(ok, warnings)
-                    self:_setToast(ok, warnings)
-                end,
+                onCopyResult = self._onCopyResult,
             })),
             pane("plugins", e(PluginManagerView, {
                 loader   = self.props.pluginLoader or self.state.plugins,
                 bytecode = self.state.bytecode,
-                onCopyResult = function(ok, warnings)
-                    self:_setToast(ok, warnings)
-                end,
+                onCopyResult = self._onCopyResult,
             })),
             e("Frame", {
                 key              = "tabborder",
