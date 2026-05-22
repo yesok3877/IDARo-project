@@ -361,13 +361,28 @@ end
 -- Public build entry point
 -- ---------------------------------------------------------------------
 
-function XRefEngine.build(disassembler, parsedBytecode, opts)
+function XRefEngine.run(disassembler, parsedBytecode, opts)
     opts = opts or {}
     local engine = XRefEngine.new(disassembler, parsedBytecode, opts)
-    return engine:build(opts.progressCb)
+    return XRefEngine._instanceBuild(engine, opts.progressCb)
+end
+-- Back-compat: some callers pre-date the rename. Route XRefEngine.build
+-- (when called with the static signature: first arg is a disassembler,
+-- not an engine) to the new static name. If first arg looks like an
+-- engine (has _disasm), we treat it as the colon-call.
+function XRefEngine.build(...)
+    local args = { ... }
+    local first = args[1]
+    -- Engine instances always have _disasm; a raw disassembler doesn't.
+    if type(first) == "table" and rawget(first, "_disasm") ~= nil then
+        -- Instance method call: engine:build(progressCb)
+        return XRefEngine._instanceBuild(first, args[2])
+    end
+    -- Static call: XRefEngine.run-style with (disassembler, parsedBytecode, opts)
+    return XRefEngine.run(args[1], args[2], args[3])
 end
 
-function XRefEngine:build(progressCb)
+function XRefEngine._instanceBuild(self, progressCb)
     local index = newIndex(self._bc)
     local protoCount = self._bc.stats and self._bc.stats.protos or 0
     if protoCount == 0 then
@@ -391,6 +406,10 @@ function XRefEngine:build(progressCb)
             index.stats.uniqueStrings, index.stats.uniqueImports)
     end
     return index
+end
+-- Public instance-method alias for engine:build(progressCb).
+function XRefEngine:build_instance(progressCb)
+    return XRefEngine._instanceBuild(self, progressCb)
 end
 
 function XRefEngine:index() return self._index end
