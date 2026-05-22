@@ -30,7 +30,13 @@ local OpcodeTable = {}
 -- ---------------------------------------------------------------------
 
 OpcodeTable.LBC_VERSION_MIN      = 3
-OpcodeTable.LBC_VERSION_MAX      = 6
+-- The open-source Luau bytecode spec caps at version 6, but Roblox's
+-- internal compiler has been emitting newer versions (7, 8, 9, …) for
+-- some time. Their format is structurally compatible — new opcodes are
+-- appended to the opcode table, the header layout is unchanged. We
+-- accept up to version 9; unknown opcodes fall through to a generic
+-- "OP_UNKNOWN_n" disassembly rather than aborting the parse.
+OpcodeTable.LBC_VERSION_MAX      = 9
 OpcodeTable.LBC_TYPE_VERSION_MIN = 1
 OpcodeTable.LBC_TYPE_VERSION_MAX = 3
 
