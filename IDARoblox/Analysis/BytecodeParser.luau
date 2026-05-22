@@ -390,10 +390,31 @@ end
 -- ---------------------------------------------------------------------
 
 function BytecodeParser.parseScript(scriptInstance, opts)
-    local getBytecode = rawget(_G, "getscriptbytecode")
-        or rawget(getfenv(), "getscriptbytecode")
+    -- Most executors expose getscriptbytecode in their elevated globals
+    -- (getgenv) rather than in _G or the script's own fenv. Walk every
+    -- candidate environment and accept known aliases.
+    local getBytecode
+    local sources = { _G }
+    local g = rawget(_G, "getgenv")
+    if type(g) == "function" then
+        local ok, env = pcall(g)
+        if ok and type(env) == "table" then sources[#sources + 1] = env end
+    end
+    local r = rawget(_G, "getrenv")
+    if type(r) == "function" then
+        local ok, env = pcall(r)
+        if ok and type(env) == "table" then sources[#sources + 1] = env end
+    end
+    sources[#sources + 1] = getfenv()
+    for _, env in sources do
+        local fn = rawget(env, "getscriptbytecode")
+            or rawget(env, "dumpstring")
+            or rawget(env, "getscriptbytes")
+        if type(fn) == "function" then getBytecode = fn; break end
+    end
     if type(getBytecode) ~= "function" then
-        error("BytecodeParser.parseScript: getscriptbytecode unavailable in this env", 2)
+        error("BytecodeParser.parseScript: getscriptbytecode unavailable in this env "
+            .. "(checked _G, getgenv(), getrenv(), getfenv())", 2)
     end
     local ok, bytes = pcall(getBytecode, scriptInstance)
     if not ok then

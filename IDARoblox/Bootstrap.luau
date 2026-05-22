@@ -397,7 +397,29 @@ renderer:mount(
 -- Self-bytecode smoke test
 -- ---------------------------------------------------------------------
 
-local getbc = rawget(_G, "getscriptbytecode") or rawget(getfenv(0), "getscriptbytecode")
+local getbc do
+    -- Wave (and most modern executors) expose getscriptbytecode in the
+    -- elevated globals returned by getgenv(), not in _G or the script's
+    -- own fenv. We resolve from every plausible location.
+    local sources = { _G }
+    local g = rawget(_G, "getgenv")
+    if type(g) == "function" then
+        local ok, env = pcall(g)
+        if ok and type(env) == "table" then sources[#sources + 1] = env end
+    end
+    local r = rawget(_G, "getrenv")
+    if type(r) == "function" then
+        local ok, env = pcall(r)
+        if ok and type(env) == "table" then sources[#sources + 1] = env end
+    end
+    sources[#sources + 1] = getfenv(0)
+    for _, env in sources do
+        local fn = rawget(env, "getscriptbytecode")
+            or rawget(env, "dumpstring")                            -- Krnl alias
+            or rawget(env, "getscriptbytes")                        -- Synapse v3 alias
+        if type(fn) == "function" then getbc = fn; break end
+    end
+end
 if type(getbc) == "function" then
     task.defer(function()
         local ok, bytes = pcall(getbc, script)

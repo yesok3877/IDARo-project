@@ -108,9 +108,29 @@ function BytecodeReader:readHeader(): { version: number, typesVersion: number }
     end
 
     if version < OpcodeTable.LBC_VERSION_MIN or version > OpcodeTable.LBC_VERSION_MAX then
+        -- Hex-dump the first 32 bytes so the caller can see what was
+        -- actually returned. Some executors wrap the bytecode in a
+        -- header (length prefix, encryption marker, etc.) and the
+        -- first byte we read isn't the real version.
+        local total = (self._stream.length and self._stream:length()) or 0
+        local snapshot
+        local saveOk = pcall(function()
+            self._stream:seek(1)
+            local n = math.min(32, total)
+            local bytes = self._stream:readBytes(n)
+            local hexParts = {}
+            for i = 1, #bytes do
+                hexParts[i] = string.format("%02X", string.byte(bytes, i))
+            end
+            snapshot = table.concat(hexParts, " ")
+        end)
         self:_fail(string.format(
-            "Unsupported bytecode version %d (supported %d..%d)",
-            version, OpcodeTable.LBC_VERSION_MIN, OpcodeTable.LBC_VERSION_MAX))
+            "Unsupported bytecode version %d (supported %d..%d). "
+            .. "First %d bytes: %s%s",
+            version, OpcodeTable.LBC_VERSION_MIN, OpcodeTable.LBC_VERSION_MAX,
+            math.min(32, total),
+            (saveOk and snapshot) or "<unavailable>",
+            (total > 32) and " ..." or ""))
     end
 
     local typesVersion = 0
